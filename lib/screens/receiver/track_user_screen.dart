@@ -28,6 +28,11 @@ class _TrackUserScreenState extends State<TrackUserScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   Timer? _locationUpdateTimer;
+  
+  // Add these new variables to track initial loading state
+  bool _hasInitialData = false;
+  bool _isInitialLoading = true;
+  bool _isDataRefreshing = false;
 
   @override
   void initState() {
@@ -97,6 +102,10 @@ class _TrackUserScreenState extends State<TrackUserScreen>
         setState(() {
           _myLocation = position;
           _isLoadingMyLocation = false;
+          // Calculate distance here when we have both locations
+          if (_currentLocation != null) {
+            _distance = _calculateDistance(_currentLocation!);
+          }
         });
       }
     } catch (e) {
@@ -109,21 +118,16 @@ class _TrackUserScreenState extends State<TrackUserScreen>
     }
   }
 
-  void _calculateDistance(LocationModel senderLocation) {
+  double? _calculateDistance(LocationModel senderLocation) {
     if (_myLocation != null) {
-      double distanceInMeters = Geolocator.distanceBetween(
+      return Geolocator.distanceBetween(
         _myLocation!.latitude,
         _myLocation!.longitude,
         senderLocation.latitude,
         senderLocation.longitude,
       );
-      
-      if (mounted) {
-        setState(() {
-          _distance = distanceInMeters;
-        });
-      }
     }
+    return null;
   }
 
   @override
@@ -222,8 +226,17 @@ class _TrackUserScreenState extends State<TrackUserScreen>
       body: StreamBuilder<LocationModel?>(
         stream: _locationService.getUserLocationStream(widget.sender.uid),
         builder: (context, snapshot) {
+          // Track data refreshing state
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildLoadingState();
+            if (_hasInitialData) {
+              // Background refresh
+              _isDataRefreshing = true;
+            } else {
+              // Initial loading
+              return _buildLoadingState();
+            }
+          } else {
+            _isDataRefreshing = false;
           }
 
           if (snapshot.hasError) {
@@ -233,11 +246,40 @@ class _TrackUserScreenState extends State<TrackUserScreen>
           final location = snapshot.data;
 
           if (location == null) {
-            return _buildNoLocationState();
+            // If we had data before but now it's null, don't show loading
+            if (_hasInitialData) {
+              return _buildNoLocationState();
+            }
+            // If this is the first time and we get null, show loading
+            return _buildLoadingState();
           }
 
+          // Mark that we have received initial data
+          if (!_hasInitialData) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _hasInitialData = true;
+                  _isInitialLoading = false;
+                });
+              }
+            });
+          }
+
+          // Update location and calculate distance without setState during build
           _currentLocation = location;
-          _calculateDistance(location);
+          final currentDistance = _calculateDistance(location);
+          
+          // Schedule setState to run after build is complete
+          if (currentDistance != _distance) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _distance = currentDistance;
+                });
+              }
+            });
+          }
 
           // Auto-follow user if enabled
           if (_followingUser && _mapController != null) {
@@ -246,7 +288,7 @@ class _TrackUserScreenState extends State<TrackUserScreen>
             });
           }
 
-          return _buildMapView(location);
+          return _buildMapView(location, _isDataRefreshing);
         },
       ),
     );
@@ -345,7 +387,10 @@ class _TrackUserScreenState extends State<TrackUserScreen>
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
-              onPressed: () => setState(() {}),
+              onPressed: () => setState(() {
+                _hasInitialData = false;
+                _isInitialLoading = true;
+              }),
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Try Again'),
               style: ElevatedButton.styleFrom(
@@ -435,7 +480,7 @@ class _TrackUserScreenState extends State<TrackUserScreen>
     );
   }
 
-  Widget _buildMapView(LocationModel location) {
+  Widget _buildMapView(LocationModel location, bool isRefreshing) {
     Set<Marker> markers = _createMarkers(location);
     Set<Polyline> polylines = _createPolylines(location);
 
@@ -472,10 +517,11 @@ class _TrackUserScreenState extends State<TrackUserScreen>
                 },
               ),
               _buildMapControls(),
+              // Modified: Show loading indicator only for my location updates
               if (_isLoadingMyLocation)
                 Positioned(
                   top: 16,
-                  left: 16,
+                  right: 16,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
@@ -512,6 +558,49 @@ class _TrackUserScreenState extends State<TrackUserScreen>
                     ),
                   ),
                 ),
+              // Add a subtle indicator for background data updates
+              if (isRefreshing)
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.green[600]!.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Syncing...',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
             ],
           ),
         ),
@@ -1047,4 +1136,5 @@ class _TrackUserScreenState extends State<TrackUserScreen>
     _locationUpdateTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
-  }}
+  }
+}
