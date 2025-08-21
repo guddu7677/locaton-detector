@@ -1,9 +1,7 @@
-import java.util.Properties
-import java.io.FileInputStream
-
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("kotlin-android")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
 }
@@ -19,76 +17,61 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
+        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.location"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+   compileSdk = 36
 
-        // Load Google Maps API key from local.properties
-        val localProperties = Properties()
-        val localPropertiesFile = rootProject.file("local.properties")
-        if (localPropertiesFile.exists()) {
-            localProperties.load(FileInputStream(localPropertiesFile))
-        }
-        
-        manifestPlaceholders["GOOGLE_MAP_API_KEY"] = 
-            localProperties.getProperty("GOOGLE_MAP_API_KEY", "")
+    defaultConfig {
+        applicationId = "com.example.location"
+        minSdk = flutter.minSdkVersion
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
 
-        // Target only common architectures to avoid missing library issues
-        ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
-        }
+        // ✅ Kotlin DSL में manifestPlaceholders
+        manifestPlaceholders.put(
+            "GOOGLE_MAP_API_KEY",
+            if (project.hasProperty("GOOGLE_MAP_API_KEY")) {
+                project.property("GOOGLE_MAP_API_KEY") as String
+            } else {
+                "AIzaSyCeUvUpxCAYciJZ4blCtMm7snAM8ODvmg4" // fallback API key
+            }
+        )
+      }
     }
 
     buildTypes {
         release {
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so flutter run --release works.
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-            isShrinkResources = false
         }
-        
-        debug {
-            isMinifyEnabled = false
-            isShrinkResources = false
-            isDebuggable = true
-        }
-    }
-
-    lint {
-        checkReleaseBuilds = false
-        abortOnError = false
-        ignoreWarnings = true
-    }
-
-    packagingOptions {
-        pickFirst("**/libc++_shared.so")
-        pickFirst("**/libjsc.so")
     }
 }
 
 flutter {
     source = "../.."
 }
-
 dependencies {
-    // Firebase BOM - manages versions of all Firebase libraries
-    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
-    
-    // Firebase libraries (versions managed by BOM)
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
-    implementation("com.google.firebase:firebase-database")
-    
-    // Multidex support
-    implementation("androidx.multidex:multidex:2.0.1")
-    
-    // Optional: Add these if you need additional functionality
-    // implementation("com.google.firebase:firebase-messaging") // For push notifications
-    // implementation("com.google.firebase:firebase-storage")   // For file storage
+  // Import the Firebase BoM
+  implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+
+
+  // TODO: Add the dependencies for Firebase products you want to use
+  // When using the BoM, don't specify versions in Firebase dependencies
+  implementation("com.google.firebase:firebase-analytics")
+
+
+  // Add the dependencies for any other desired Firebase products
+  // https://firebase.google.com/docs/android/setup#available-libraries
 }
